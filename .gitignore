@@ -1,3 +1,29 @@
+# Environments
+.venv/
+venv/
+env/
+
+# Cache & Diagnostics
+.cache/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
+# CLI Output & Temporary Files
+output/
+preview/
+cleaned_images/
+intermediate.json
+report.json
+inspection.json
+*.pptx
+
+# Config & Environment Secrets
+config.yaml
+glossary.yaml
+.env
+*.env
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
