@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 
 class Config(BaseModel):
-    provider: str = "dummy"
+    provider: str = "gemini"  # "dummy", "llm"/"openai", or "gemini"
     model: Optional[str] = None
     api_key: Optional[str] = None
     ocr_lang: str = "japan"

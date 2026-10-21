@@ -48,7 +48,7 @@ class OCRDetector:
     def _init_engine(self):
         try:
             from paddleocr import PaddleOCR
-            self._engine = PaddleOCR(use_angle_cls=True, lang=self.lang, show_log=False)
+            self._engine = PaddleOCR(use_textline_orientation=True, lang=self.lang)
             self._engine_type = "paddle"
             logger.info("PaddleOCR engine initialized successfully.")
         except Exception as e:

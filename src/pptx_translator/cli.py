@@ -48,13 +48,23 @@ def cmd_translate(args):
     ir = parser.parse()
 
     # Provider selection
-    if config.provider == "llm" or config.provider == "openai":
+    if config.provider == "gemini":
+        provider = LLMProvider(
+            api_key=config.api_key,
+            model=config.model or "gemini-2.5-flash",
+            target_lang=config.target_lang,
+            glossary=glossary,
+            cache_manager=cache_manager,
+            backend="gemini",
+        )
+    elif config.provider == "llm" or config.provider == "openai":
         provider = LLMProvider(
             api_key=config.api_key,
             model=config.model or "gpt-4o-mini",
             target_lang=config.target_lang,
             glossary=glossary,
             cache_manager=cache_manager,
+            backend="openai",
         )
     else:
         provider = DummyProvider()

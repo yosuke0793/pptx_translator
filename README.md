@@ -72,8 +72,8 @@ pptx-translator validate output/translated.pptx --report report.json
 ### 設定ファイル (`config.yaml`)
 
 ```yaml
-provider: "dummy" # "dummy" または "llm" / "openai"
-model: "gpt-4o-mini"
+provider: "gemini" # "dummy" または "llm" / "openai" / "gemini"（デフォルト: gemini）
+model: "gemini-2.5-flash" # openaiの場合は例: "gpt-4o-mini"
 ocr_lang: "japan"
 ocr_confidence_threshold: 0.90
 min_font_size: 8.0
@@ -101,7 +101,11 @@ protected_terms:
 
 環境変数でAPIキーを設定する場合：
 ```bash
+# OpenAIを使用する場合
 export OPENAI_API_KEY="your-api-key-here"
+
+# Geminiを使用する場合（GEMINI_API_KEYも利用可）
+export GEMINI_NPI_KEY="your-gemini-api-key-here"
 ```
 
 ---
@@ -139,7 +143,7 @@ mypy src
 
 ## トラブルシューティング
 
-1. **`OPENAI_API_KEY` が設定されていない**:
+1. **`OPENAI_API_KEY` / `GEMINI_NPI_KEY` が設定されていない**:
    - 警告ログが出力され、自動的にダミー翻訳 (`[EN] 原文`) にフォールバックします。
 
 2. **PaddleOCRがインストールされていない**:

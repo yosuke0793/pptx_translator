@@ -13,18 +13,25 @@ logger = logging.getLogger(__name__)
 
 
 class LLMProvider(TranslationProvider):
-    """LLM Translation Provider supporting OpenAI Chat Completions API with caching and glossary."""
+    """LLM Translation Provider supporting OpenAI Chat Completions API and Google Gemini API with caching and glossary."""
 
     def __init__(
         self,
         api_key: Optional[str] = None,
-        model: str = "gpt-4o-mini",
+        model: Optional[str] = None,
         target_lang: str = "en",
         glossary: Optional[Glossary] = None,
         cache_manager: Optional[CacheManager] = None,
+        backend: str = "openai",
     ):
-        self.api_key = api_key or os.environ.get("OPENAI_API_KEY")
-        self.model = model
+        self.backend = backend
+        if api_key:
+            self.api_key = api_key
+        elif backend == "gemini":
+            self.api_key = os.environ.get("GEMINI_NPI_KEY") or os.environ.get("GEMINI_API_KEY")
+        else:
+            self.api_key = os.environ.get("OPENAI_API_KEY")
+        self.model = model or ("gemini-2.5-flash" if backend == "gemini" else "gpt-4o-mini")
         self.target_lang = target_lang
         self.glossary = glossary or Glossary()
         self.cache_manager = cache_manager or CacheManager()
@@ -51,7 +58,8 @@ class LLMProvider(TranslationProvider):
 
         # 2. Call LLM API if key is available
         if not self.api_key:
-            logger.warning("No OPENAI_API_KEY found. Falling back to dummy translation prefix.")
+            env_hint = "GEMINI_NPI_KEY / GEMINI_API_KEY" if self.backend == "gemini" else "OPENAI_API_KEY"
+            logger.warning(f"No API key found ({env_hint}). Falling back to dummy translation prefix.")
             for elem in to_translate:
                 elem.translation = f"[EN] {elem.source_text}"
             return slide
@@ -73,42 +81,72 @@ class LLMProvider(TranslationProvider):
         user_content = json.dumps({"presentation_title": context.title, "slide_title": slide.title, "items": payload_items}, ensure_ascii=False)
 
         try:
-            req = urllib.request.Request(
-                "https://api.openai.com/v1/chat/completions",
-                data=json.dumps({
-                    "model": self.model,
-                    "response_format": {"type": "json_object"},
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_content},
-                    ],
-                    "temperature": 0.3,
-                }).encode("utf-8"),
-                headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json",
-                },
-                method="POST",
-            )
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                result_json = json.loads(resp.read().decode("utf-8"))
-                content = result_json["choices"][0]["message"]["content"]
-                parsed = json.loads(content)
-                trans_map = {item["id"]: item["translation"] for item in parsed.get("translations", []) if "id" in item and "translation" in item}
+            if self.backend == "gemini":
+                trans_map = self._call_gemini(system_prompt, user_content)
+            else:
+                trans_map = self._call_openai(system_prompt, user_content)
 
-                for elem in to_translate:
-                    if elem.element_id in trans_map:
-                        trans_text = self.glossary.apply_post_translation(trans_map[elem.element_id])
-                        elem.translation = trans_text
-                        self.cache_manager.set_translation(elem.source_text, "ja", self.target_lang, trans_text)
-                    else:
-                        elem.translation = f"[EN] {elem.source_text}"
+            for elem in to_translate:
+                if elem.element_id in trans_map:
+                    trans_text = self.glossary.apply_post_translation(trans_map[elem.element_id])
+                    elem.translation = trans_text
+                    self.cache_manager.set_translation(elem.source_text, "ja", self.target_lang, trans_text)
+                else:
+                    elem.translation = f"[EN] {elem.source_text}"
         except Exception as e:
             logger.error(f"LLM API translation failed: {e}. Falling back to default.")
             for elem in to_translate:
                 elem.translation = f"[EN] {elem.source_text}"
 
         return slide
+
+    def _call_openai(self, system_prompt: str, user_content: str) -> dict:
+        req = urllib.request.Request(
+            "https://api.openai.com/v1/chat/completions",
+            data=json.dumps({
+                "model": self.model,
+                "response_format": {"type": "json_object"},
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_content},
+                ],
+                "temperature": 0.3,
+            }).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            result_json = json.loads(resp.read().decode("utf-8"))
+            content = result_json["choices"][0]["message"]["content"]
+            parsed = json.loads(content)
+            return {item["id"]: item["translation"] for item in parsed.get("translations", []) if "id" in item and "translation" in item}
+
+    def _call_gemini(self, system_prompt: str, user_content: str) -> dict:
+        url = (
+            f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent"
+            f"?key={self.api_key}"
+        )
+        req = urllib.request.Request(
+            url,
+            data=json.dumps({
+                "system_instruction": {"parts": [{"text": system_prompt}]},
+                "contents": [{"role": "user", "parts": [{"text": user_content}]}],
+                "generationConfig": {
+                    "temperature": 0.3,
+                    "response_mime_type": "application/json",
+                },
+            }).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            result_json = json.loads(resp.read().decode("utf-8"))
+            content = result_json["candidates"][0]["content"]["parts"][0]["text"]
+            parsed = json.loads(content)
+            return {item["id"]: item["translation"] for item in parsed.get("translations", []) if "id" in item and "translation" in item}
 
     def translate_all(self, ir: IntermediateRepresentation) -> IntermediateRepresentation:
         for slide in ir.slides:
